@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+            background-color: #f4f4f4;
+        }
+
+        .payment-form {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            width: 300px;
+        }
+
+        .payment-form h2 {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .payment-form input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .payment-form button {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            background-color: blue;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #card-element {
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+    <script src="https://js.stripe.com/v3/"></script>
+</head>
+
+<body>
+    <div class="payment-form">
+        <h2>Enter Your Payment Details</h2>
+        <input type="text" id="username" placeholder="Username">
+        <input type="text" id="address" placeholder="Address">
+        <div id="card-element"></div>
+        <button id="confirm-payment">Confirm Payment</button>
+    </div>
+   
+    <script>
+        // Function to get query parameters from URL
+        function getQueryParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                foodId: params.get('foodId'),
+                foodName: params.get('foodName')
+            };
+        }
+
+        const { foodId, foodName } = getQueryParams();
+
+        const stripe = Stripe('Your Publishable Key');
+        const elements = stripe.elements();
+        const cardElement = elements.create('card');
+        cardElement.mount('#card-element');
+
+        document.getElementById('confirm-payment').addEventListener('click', async () => {
+            const username = document.getElementById('username').value;
+            const address = document.getElementById('address').value;
+
+            const { paymentMethod, error } = await stripe.createPaymentMethod('card', cardElement, {
+                billing_details: { name: username }
+            });
+
+            if (error) {
+                alert(error.message);
+            } else {
+                const response = await fetch('http://localhost:3000/create-payment-intent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        amount: 1000, // Replace with the actual amount
+                        username: username,
+                        address: address,
+                        foodId: foodId,
+                        foodName: foodName
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorMessage = await response.text();
+                    alert(`Error: ${errorMessage}`);
+                    return;
+                }
+
+                const { clientSecret } = await response.json();
+
+                const { error: confirmError } = await stripe.confirmCardPayment(clientSecret, {
+                    payment_method: paymentMethod.id
+                });
+
+                if (confirmError) {
+                    alert(confirmError.message);
+                } else {
+                    // Update the order status in the file
+                    const orderDetails = `Username: ${username}\nAddress: ${address}\nFood ID: ${foodId}\nFood Name: ${foodName}\nPayment Status: Successful\n\n`;
+                    fetch('http://localhost:3000/update-order-status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ orderDetails })
+                    });
+
+                    alert('Payment successful!');
+                    window.location.href = "index.html";
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>
+
+
+
